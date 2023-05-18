@@ -46,7 +46,7 @@ const (
 	dataDir                     = "data/"           // directory for the signal state
 	stateFile                   = "filterstate.txt" // last M-1 filtered outputs from prev, ampl & freq of signal, time of last sample
 	twoPi               float64 = 2.0 * math.Pi
-	signal                      = "data/signal.txt" //  signal
+	signal                      = "signal.txt" //  signal
 )
 
 type Attribute struct {
@@ -58,15 +58,15 @@ type Attribute struct {
 
 // Type to contain all the HTML template actions
 type PlotT struct {
-	Grid         []string    // plotting grid
-	Status       string      // status of the plot
-	Xlabel       []string    // x-axis labels
-	Ylabel       []string    // y-axis labels
-	Filename     string      // filename of filter coefficients
-	SamplingFreq string      // data sampling rate in Hz
-	Samples      string      // complex samples in data file
-	SNR          string      // signal-to-noise ratio
-	Sines        []Attribute // frequency and amplitude of the sines
+	Grid       []string    // plotting grid
+	Status     string      // status of the plot
+	Xlabel     []string    // x-axis labels
+	Ylabel     []string    // y-axis labels
+	Filename   string      // filename of filter coefficients
+	SampleFreq string      // data sampling rate in Hz
+	Samples    string      // complex samples in data file
+	SNR        string      // signal-to-noise ratio
+	Sines      []Attribute // frequency and amplitude of the sines
 }
 
 // properties of the sinusoids for generating the signal
@@ -91,7 +91,7 @@ type FilterSignal struct {
 	samplesGenerated int           // number of samples generated so far for this submit
 	sampleFreq       int           // sample frequency in Hz
 	snr              int           // signal to noise ratio in dB
-	sines            []Sine        // sinusoids to generate in the signal
+	sines            []Sine        // sinusoids to generate in the signalsignal
 	FilterState                    // used by current sample block from previous sample block
 	filterCoeff      []float64     // filter coefficients
 	filterfile       string        // name of the FIR filter file
@@ -161,7 +161,7 @@ func (ep *Endpoints) findEndpoints(input *bufio.Scanner, xmax float64) {
 		)
 
 		if y, err = strconv.ParseFloat(value, 64); err != nil {
-			fmt.Printf("String %s conversion to float error: %v\n", value, err)
+			fmt.Printf("findEndpoints string %s conversion to float error: %v\n", value, err)
 			continue
 		}
 
@@ -206,7 +206,7 @@ func (fs *FilterSignal) gridFillInterp(plot *PlotT) error {
 	value := input.Text()
 
 	if y, err = strconv.ParseFloat(value, 64); err != nil {
-		fmt.Printf("String %s conversion to float error: %v\n", value, err)
+		fmt.Printf("gridFillInterp first sample string %s conversion to float error: %v\n", value, err)
 		return err
 	}
 
@@ -227,7 +227,7 @@ func (fs *FilterSignal) gridFillInterp(plot *PlotT) error {
 		x += timeStep
 		value = input.Text()
 		if y, err = strconv.ParseFloat(value, 64); err != nil {
-			fmt.Printf("String %s conversion to float error: %v\n", value, err)
+			fmt.Printf("gridFillInterp the rest of file string %s conversion to float error: %v\n", value, err)
 			return err
 		}
 
@@ -321,7 +321,6 @@ func (fs *FilterSignal) filterBuf(index int, nsamples int, f *os.File) {
 // nofilterBuf saves the signal to a file.  It is not modified.
 // index is the buffer to use, 1 or 2, nsamples is the number of samples to filter
 func (fs *FilterSignal) nofilterBuf(index int, nsamples int, f *os.File) {
-
 	for n := 0; n < nsamples; n++ {
 		fmt.Fprintf(f, "%f\n", fs.buf[index][n])
 	}
@@ -330,8 +329,8 @@ func (fs *FilterSignal) nofilterBuf(index int, nsamples int, f *os.File) {
 // generate creates the noisy signal, it is the producer or generator
 func (fs *FilterSignal) generate(r *http.Request) error {
 
-	// get number of sinsuoids and SNR, then get frequencies and amplitudes
-	temp := r.FormValue("SSsnr")
+	// get SNR, sine frequencies and sine amplitudes
+	temp := r.FormValue("snr")
 	if len(temp) == 0 {
 		return fmt.Errorf("missing SNR for Sum of Sinsuoids")
 	}
@@ -368,6 +367,7 @@ func (fs *FilterSignal) generate(r *http.Request) error {
 			}
 		}
 	}
+
 	// Require at least one sine to create
 	if len(fs.sines) == 0 {
 		return fmt.Errorf("enter frequency and amplitude of 1 to 5 sinsuoids")
@@ -392,12 +392,12 @@ func (fs *FilterSignal) generate(r *http.Request) error {
 		// signal the filter when done with each block of samples
 		// block on a semaphore until filter goroutine is available
 		for {
-			n := fs.fillBuf(1, noiseSD)
+			n := fs.fillBuf(0, noiseSD)
 			fs.sema1 <- n
 			if n < block {
 				return
 			}
-			n = fs.fillBuf(2, noiseSD)
+			n = fs.fillBuf(1, noiseSD)
 			fs.sema2 <- n
 			if n < block {
 				return
@@ -416,7 +416,7 @@ func (fs *FilterSignal) filter(r *http.Request, plot *PlotT) error {
 	// if no filter file specified, pass the samples unchanged
 	filename := r.FormValue("filter")
 	if len(filename) == 0 {
-		f2, _ := os.Create(signal)
+		f2, _ := os.Create(path.Join(dataDir, signal))
 
 		// launch a goroutine to no-filter generator signal
 		// select on the generator semaphores and the done channel
@@ -445,12 +445,11 @@ func (fs *FilterSignal) filter(r *http.Request, plot *PlotT) error {
 		}()
 	} else {
 		// get filter coefficients from file specified by user
-		f, err := os.Open(filename)
+		f, err := os.Open(path.Join(dataDir, filename))
 		if err != nil {
 			return fmt.Errorf("open %s error %v", filename, err)
 		}
 		defer f.Close()
-		fs.filterfile = filename
 		input := bufio.NewScanner(f)
 		for input.Scan() {
 			line := input.Text()
@@ -464,7 +463,7 @@ func (fs *FilterSignal) filter(r *http.Request, plot *PlotT) error {
 		// allocate memory for filtered output from previous submit
 		fs.lastFiltered = make([]float64, len(fs.filterCoeff))
 
-		f2, _ := os.Create(signal)
+		f2, _ := os.Create(path.Join(dataDir, signal))
 
 		// launch a goroutine to filter generator signal
 		// select on the generator semaphores and the done channel
@@ -499,6 +498,28 @@ func (fs *FilterSignal) filter(r *http.Request, plot *PlotT) error {
 	return nil
 }
 
+// showSineTable displays an empty sine table
+func showSineTable(plot *PlotT) {
+	// Fill in the table of frequencies and their amplitudes
+	var (
+		freqName []string = []string{"SSfreq1", "SSfreq2",
+			"SSfreq3", "SSfreq4", "SSfreq5"}
+		ampName []string = []string{"SSamp1", "SSamp2", "SSamp3",
+			"SSamp4", "SSamp5"}
+	)
+
+	// show the sine table even if empty, otherwise it will never be filled in
+	plot.Sines = make([]Attribute, len(freqName))
+	for i := range freqName {
+		plot.Sines[i] = Attribute{
+			FreqName: freqName[i],
+			AmplName: ampName[i],
+			Freq:     "",
+			Ampl:     "",
+		}
+	}
+}
+
 // label the plot and execute the PlotT on the HTML template
 func (fs *FilterSignal) labelExec(w http.ResponseWriter, plot PlotT, endpoints Endpoints) {
 
@@ -521,35 +542,27 @@ func (fs *FilterSignal) labelExec(w http.ResponseWriter, plot PlotT, endpoints E
 
 	// Fill in the form fields
 	plot.Samples = strconv.Itoa(fs.samples)
-	plot.SamplingFreq = strconv.Itoa(fs.sampleFreq)
+	plot.SampleFreq = strconv.Itoa(fs.sampleFreq)
 	plot.SNR = strconv.Itoa(fs.snr)
-	plot.Filename = fs.filterfile
-	// Fill in the table of frequencies and their amplitudes
-	var (
-		freqName []string = []string{"SSfreq1", "SSfreq2",
-			"SSfreq3", "SSfreq4", "SSfreq5"}
-		ampName []string = []string{"SSamp1", "SSamp2", "SSamp3",
-			"SSamp4", "SSamp5"}
-	)
+	plot.Filename = path.Base(fs.filterfile)
 
-	// show the sine table even if empty, otherwise it will never be filled in
+	showSineTable(&plot)
+
 	i := 0
-	plot.Sines = make([]Attribute, len(freqName))
-	for i := range freqName {
-		plot.Sines[i] = Attribute{
-			FreqName: freqName[i],
-			AmplName: ampName[i]}
-	}
-
 	//  Fill in any previous entries so the user doesn't have to re-enter them
 	for _, sig := range fs.sines {
 		plot.Sines[i].Freq = strconv.Itoa(sig.freq)
 		plot.Sines[i].Ampl = strconv.Itoa(int(sig.ampl))
+		i++
 	}
 
+	filename := "none"
+	if len(plot.Filename) > 0 {
+		filename = plot.Filename
+	}
 	if len(plot.Status) == 0 {
 		plot.Status = fmt.Sprintf("Signal consisting of %d sines was filtered with %s",
-			len(fs.sines), plot.Filename)
+			len(fs.sines), filename)
 	}
 
 	// Write to HTTP using template and grid
@@ -569,7 +582,8 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 		samples, err := strconv.Atoi(temp)
 		if err != nil {
 			plot.Status = fmt.Sprintf("Samples conversion to int error: %v", err.Error())
-			fmt.Printf("Samples conversion to int error: %v", err.Error())
+			showSineTable(&plot)
+			fmt.Printf("Samples conversion to int error: %v\n", err.Error())
 			// Write to HTTP using template and grid
 			if err := filterSignalTmpl.Execute(w, plot); err != nil {
 				log.Fatalf("Write to HTTP output using template with error: %v\n", err)
@@ -581,7 +595,8 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 		sf, err := strconv.Atoi(temp)
 		if err != nil {
 			fmt.Printf("Sample frequency conversion error: %v\n", err)
-			plot.Status = fmt.Sprintf("Samples conversion to int error: %v", err.Error())
+			plot.Status = fmt.Sprintf("Samples frequency conversion to int error: %v", err.Error())
+			showSineTable(&plot)
 			// Write to HTTP using template and grid
 			if err := filterSignalTmpl.Execute(w, plot); err != nil {
 				log.Fatalf("Write to HTTP output using template with error: %v\n", err)
@@ -603,7 +618,8 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 			lst, err := strconv.ParseFloat(line, 64)
 			if err != nil {
 				fmt.Printf("From %s, sample time conversion error: %v\n", stateFile, err)
-				plot.Status = fmt.Sprintf("Samples conversion to int error: %v", err.Error())
+				plot.Status = fmt.Sprintf("Sample time conversion to int error: %v", err.Error())
+				showSineTable(&plot)
 				// Write to HTTP using template and grid
 				if err := filterSignalTmpl.Execute(w, plot); err != nil {
 					log.Fatalf("Write to HTTP output using template with error: %v\n", err)
@@ -619,6 +635,7 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					fmt.Printf("Sample time conversion error: %v\n", err)
 					plot.Status = fmt.Sprintf("From %s, filtered output conversion to float error: %v", stateFile, err.Error())
+					showSineTable(&plot)
 					// Write to HTTP using template and grid
 					if err := filterSignalTmpl.Execute(w, plot); err != nil {
 						log.Fatalf("Write to HTTP output using template with error: %v\n", err)
@@ -650,8 +667,9 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 		// start generating samples and send to filter
 		err = fs.generate(r)
 		if err != nil {
-			plot.Status = fmt.Sprintf("Samples conversion to int error: %v", err.Error())
-			fmt.Printf("generate error: %v", err.Error())
+			plot.Status = err.Error()
+			showSineTable(&plot)
+			fmt.Printf("generate error: %v\n", err.Error())
 			// Write to HTTP using template and grid
 			if err := filterSignalTmpl.Execute(w, plot); err != nil {
 				log.Fatalf("Write to HTTP output using template with error: %v\n", err)
@@ -662,8 +680,9 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 		// start filtering when the samples arrive from the generator
 		err = fs.filter(r, &plot)
 		if err != nil {
-			plot.Status = fmt.Sprintf("Samples conversion to int error: %v", err.Error())
-			fmt.Printf("filter error: %v", err.Error())
+			plot.Status = err.Error()
+			showSineTable(&plot)
+			fmt.Printf("filter error: %v\n", err.Error())
 			// Write to HTTP using template and grid
 			if err := filterSignalTmpl.Execute(w, plot); err != nil {
 				log.Fatalf("Write to HTTP output using template with error: %v\n", err)
@@ -679,7 +698,17 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Fill in the PlotT grid with the signal time vs amplitude
-		fs.gridFillInterp(&plot)
+		err = fs.gridFillInterp(&plot)
+		if err != nil {
+			plot.Status = err.Error()
+			showSineTable(&plot)
+			fmt.Printf("gridFillInterp error: %v\n", err.Error())
+			// Write to HTTP using template and grid
+			if err := filterSignalTmpl.Execute(w, plot); err != nil {
+				log.Fatalf("Write to HTTP output using template with error: %v\n", err)
+			}
+			return
+		}
 
 		//  generate x-labels, ylabels, status in PlotT and execute the data on the HTML template
 		fs.labelExec(w, plot, fs.Endpoints)
@@ -691,6 +720,7 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("Remove file %s error: %v\n", path.Join(dataDir, stateFile), err)
 		}
 		plot.Status = "Enter samples, sample frequency, SNR, frequencies and amplitudes"
+		showSineTable(&plot)
 		if err := filterSignalTmpl.Execute(w, plot); err != nil {
 			log.Fatalf("Write to HTTP output using template with error: %v\n", err)
 		}

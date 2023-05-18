@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="eng">
 	<head>
-		<title>"Plot Time Data"</title>
+		<title>Filter Signal"</title>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<style type="text/css">
@@ -12,6 +12,22 @@
 				min-width: 200px;
 				text-align: right;
 				padding-right: 10px;
+			}
+			form, p, table, fieldset {
+				width: 600px;
+			}
+
+			table input[type="text"] {
+				width: 50px;
+			}
+			table {
+				border: 2px solid black;
+				border-collapse: collapse;
+			}
+
+			td, th {
+				border: 1px solid black;
+				text-align: center;
 			}
 
 			#outer-container {
@@ -95,30 +111,10 @@
 				margin-left: 10px;
 			}
 
-			#filename {
-				margin-left: 20px;
-			}
-
-			#rotate {
-				margin-left: 3px;
-			}
-
-			ul li.links {
-				display: inline-block;
-				list-style-type: none;
-				margin: 20px;
-			}
-
 		</style>
 	</head>
 	<body>
-		<h2>Time Data Plot</h3>
-		<nav>
-			<ul>
-				<li class="links"><a href="http://127.0.0.1:8080/plotoptions">Plot Options</a></li>
-				<li class="links"><a href="http://127.0.0.1:8080/generatedata">Generate Data</a></li>
-			</ul>
-		</nav>
+		<h2>Filter Signal</h3>
 		<div id="outer-container">
 			<div id="ylabel-container">
 				{{range .Ylabel}}
@@ -138,30 +134,37 @@
 				</div>
 			</div>
 			<div id="form">
-				<form action="http://127.0.0.1:8080/plotdata" method="post">
+				<form action="http://127.0.0.1:8080/filtersignal" method="post">
 					<fieldset>
-						<legend>Plot Data Options</legend>
+						<legend>Filter Signal Options</legend>
 						<div class="options">
-							<label for="filename">Filename:</label>
-							<input type="text" id="filename" name="filename" value="{{.Filename}}" readonly />
-							<label for="timedomain">Plot Domain:</label>
-							<input type="text" name="domain" value="time" id="timedomain" readonly />
-							<br />	
-							<label for="zoomxstart">Zoom x Start:</label>
-							<input type="text" id="zoomsxtart" name="zoomxstart" />
-							<label for="zoomxend">Zoom x End:</label>
-							<input type="text" id="zoomxend" name="zoomxend" />
+							<label for="samples">Samples:</label>
+							<input type="number" id="samples" name="samples" value="{{.Samples}}" min="3000" max="16000" required />
+							<label for="samplefreq">Sample Frequency:</label>
+							<input type="number" name="samplefreq" value="{{.SampleFreq}}" id="samplefreq" required />
 							<br />
-							<label for="zoomystart" >Zoom y Start:</label>
-							<input type="text" id="zoomystart" name="zoomystart" />
-							<label for="zoomyend">Zoom y End:</label>
-							<input type="text" id="zoomyend" name="zoomyend" />
-							<br />
-							<label for="rotate">Rotate (deg):</label>
-							<input type="text" id="rotate" name="rotate" />
-							<input type="checkbox" name="interpolate" id="interpolate" value="interpolate" />
-							<label for="interpolate">Interpolate</label>
-							<br />
+							<label for="snr">SNR:</label>
+							<input type="number" id="snr" name="snr" value="{{.SNR}}" required />
+							<label for="filter">Filter:</label>
+							<input type="file" id="filter" name="filter" value="{{.Filename}}" />
+							<hr />
+							<h4>Sinusoids</h4>
+							<table>
+								<tr>
+									<th class="sines">Frequency (Hz)</th>
+									<th class="sines">Amplitude</th>
+								</tr>
+								{{range .Sines}}
+									<tr>
+										<td class="sines">
+											<input type="number" name="{{.FreqName}}" value="{{.Freq}}" />
+										</td>
+										<td class="sines">
+											<input type="number" name="{{.AmplName}}" value="{{.Ampl}}" />
+										</td>
+									</tr>
+								{{end}}
+							</table>
 						</div>
 						<input type="submit" value="Submit" />
 						<input type="text" size="50" name="status" value="{{.Status}}" readonly />
