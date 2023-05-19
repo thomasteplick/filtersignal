@@ -131,7 +131,8 @@ func (fs *FilterSignal) fillBuf(n int, noiseSD float64) int {
 	delta := 1.0 / float64(fs.sampleFreq)
 	i := 0
 	var t float64
-	for t = fs.lastSampleTime; t < float64(howMany)*delta; t += delta {
+	endTime := fs.lastSampleTime + float64(howMany-1)*delta
+	for t = fs.lastSampleTime; t < endTime; t += delta {
 		sinesum := 0.0
 		for _, sig := range fs.sines {
 			omega := twoPi * float64(sig.freq)
@@ -188,7 +189,10 @@ func (fs *FilterSignal) gridFillInterp(plot *PlotT) error {
 		timeStep     float64 = 1.0 / float64(fs.sampleFreq)
 	)
 	// Open file
-	f, _ := os.Open(signal)
+	f, err := os.Open(path.Join(dataDir, signal))
+	if err != nil {
+		fmt.Printf("Error opening %s: %v\n", signal, err.Error())
+	}
 	// Mark the data x-y coordinate online at the corresponding
 	// grid row/column.
 	input = bufio.NewScanner(f)
@@ -197,7 +201,11 @@ func (fs *FilterSignal) gridFillInterp(plot *PlotT) error {
 	fs.Endpoints = endpoints
 
 	f.Close()
-	f, _ = os.Open(signal)
+	f, err = os.Open(path.Join(dataDir, signal))
+	if err != nil {
+		fmt.Printf("Error opening %s: %v\n", signal, err.Error())
+		return err
+	}
 	defer f.Close()
 	input = bufio.NewScanner(f)
 
@@ -209,6 +217,8 @@ func (fs *FilterSignal) gridFillInterp(plot *PlotT) error {
 		fmt.Printf("gridFillInterp first sample string %s conversion to float error: %v\n", value, err)
 		return err
 	}
+
+	plot.Grid = make([]string, rows*columns)
 
 	// This cell location (row,col) is on the line
 	row := int((endpoints.ymax-y)*yscale + .5)
@@ -522,6 +532,9 @@ func showSineTable(plot *PlotT) {
 
 // label the plot and execute the PlotT on the HTML template
 func (fs *FilterSignal) labelExec(w http.ResponseWriter, plot PlotT, endpoints Endpoints) {
+
+	plot.Xlabel = make([]string, xlabels)
+	plot.Ylabel = make([]string, ylabels)
 
 	// Construct x-axis labels
 	incr := (endpoints.xmax - endpoints.xmin) / (xlabels - 1)
