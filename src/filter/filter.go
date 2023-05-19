@@ -129,10 +129,9 @@ func (fs *FilterSignal) fillBuf(n int, noiseSD float64) int {
 	}
 
 	delta := 1.0 / float64(fs.sampleFreq)
-	i := 0
 	var t float64
-	endTime := fs.lastSampleTime + float64(howMany-1)*delta
-	for t = fs.lastSampleTime; t < endTime; t += delta {
+	t = fs.lastSampleTime
+	for i := 0; i < howMany; i++ {
 		sinesum := 0.0
 		for _, sig := range fs.sines {
 			omega := twoPi * float64(sig.freq)
@@ -140,7 +139,7 @@ func (fs *FilterSignal) fillBuf(n int, noiseSD float64) int {
 		}
 		sinesum += noiseSD * rand.NormFloat64()
 		fs.buf[n][i] = sinesum
-		i++
+		t += delta
 	}
 	// Save the next sample time for next block of samples
 	fs.lastSampleTime = t
@@ -531,7 +530,7 @@ func showSineTable(plot *PlotT) {
 }
 
 // label the plot and execute the PlotT on the HTML template
-func (fs *FilterSignal) labelExec(w http.ResponseWriter, plot PlotT, endpoints Endpoints) {
+func (fs *FilterSignal) labelExec(w http.ResponseWriter, plot *PlotT, endpoints *Endpoints) {
 
 	plot.Xlabel = make([]string, xlabels)
 	plot.Ylabel = make([]string, ylabels)
@@ -559,7 +558,7 @@ func (fs *FilterSignal) labelExec(w http.ResponseWriter, plot PlotT, endpoints E
 	plot.SNR = strconv.Itoa(fs.snr)
 	plot.Filename = path.Base(fs.filterfile)
 
-	showSineTable(&plot)
+	showSineTable(plot)
 
 	i := 0
 	//  Fill in any previous entries so the user doesn't have to re-enter them
@@ -724,7 +723,7 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 		}
 
 		//  generate x-labels, ylabels, status in PlotT and execute the data on the HTML template
-		fs.labelExec(w, plot, fs.Endpoints)
+		fs.labelExec(w, &plot, &fs.Endpoints)
 
 	} else {
 		// delete previous state file if initial connection (not a submit)
