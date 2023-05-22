@@ -77,8 +77,9 @@ type Sine struct {
 
 // previous sample block properties used for generating/filtering current block
 type FilterState struct {
-	lastFiltered   []float64 // last M-1 incomplete filtered samples from previous block
-	lastSampleTime float64   // from previous block of samples, in seconds
+	lastFiltered    []float64 // last M-1 incomplete filtered samples from previous block
+	firstSampleTime float64   // start time of current submit
+	lastSampleTime  float64   // end time of currrent submit
 }
 
 type FilterSignal struct {
@@ -115,10 +116,10 @@ func init() {
 	filterSignalTmpl = template.Must(template.ParseFiles(tmplfiltersignal))
 }
 
-// fillBuf populates the buffer with signal samples
-func (fs *FilterSignal) fillBuf(n int, noiseSD float64) int {
+// fillBuf populates the buffer with signal samples, fst = first sample time
+func (fs *FilterSignal) fillBuf(n int, noiseSD float64, fst float64) int {
 	// get last sample time from previous block
-	// fill buf n with noisy sinusoids with SNR given
+	// fill buf n with noisy sinusoids with given SNR
 	// Sum the sinsuoids and noise and insert into the buffer
 
 	// Determine how many samples we need to generate
@@ -129,8 +130,7 @@ func (fs *FilterSignal) fillBuf(n int, noiseSD float64) int {
 	}
 
 	delta := 1.0 / float64(fs.sampleFreq)
-	var t float64
-	t = fs.lastSampleTime
+	t := fst
 	for i := 0; i < howMany; i++ {
 		sinesum := 0.0
 		for _, sig := range fs.sines {
@@ -147,60 +147,30 @@ func (fs *FilterSignal) fillBuf(n int, noiseSD float64) int {
 	return howMany
 }
 
-// findEndpoints finds the minimum and maximum filter values
-func (ep *Endpoints) findEndpoints(input *bufio.Scanner, xmax float64) {
-	ep.xmax = xmax
-	ep.xmin = 0.0
-	ep.ymax = -math.MaxFloat64
-	ep.ymin = math.MaxFloat64
-	for input.Scan() {
-		value := input.Text()
-		var (
-			y   float64
-			err error
-		)
-
-		if y, err = strconv.ParseFloat(value, 64); err != nil {
-			fmt.Printf("findEndpoints string %s conversion to float error: %v\n", value, err)
-			continue
-		}
-
-		if y > ep.ymax {
-			ep.ymax = y
-		}
-		if y < ep.ymin {
-			ep.ymin = y
-		}
-	}
-}
-
 // gridFillInterp inserts the data points in the grid and draws a straight line between points
 func (fs *FilterSignal) gridFillInterp(plot *PlotT) error {
 	var (
-		x            float64 = 0.0
+		x            float64 = fs.firstSampleTime
 		y            float64 = 0.0
 		prevX, prevY float64
 		err          error
 		xscale       float64
 		yscale       float64
-		endpoints    Endpoints
 		input        *bufio.Scanner
 		timeStep     float64 = 1.0 / float64(fs.sampleFreq)
 	)
-	// Open file
-	f, err := os.Open(path.Join(dataDir, signal))
-	if err != nil {
-		fmt.Printf("Error opening %s: %v\n", signal, err.Error())
-	}
+
 	// Mark the data x-y coordinate online at the corresponding
 	// grid row/column.
-	input = bufio.NewScanner(f)
 
-	endpoints.findEndpoints(input, fs.lastSampleTime)
-	fs.Endpoints = endpoints
+	fs.xmin = fs.firstSampleTime
+	fs.xmax = fs.lastSampleTime
 
-	f.Close()
-	f, err = os.Open(path.Join(dataDir, signal))
+	// Calculate scale factors for x and y
+	xscale = (columns - 1) / (fs.xmax - fs.xmin)
+	yscale = (rows - 1) / (fs.ymax - fs.ymin)
+
+	f, err := os.Open(path.Join(dataDir, signal))
 	if err != nil {
 		fmt.Printf("Error opening %s: %v\n", signal, err.Error())
 		return err
@@ -220,16 +190,16 @@ func (fs *FilterSignal) gridFillInterp(plot *PlotT) error {
 	plot.Grid = make([]string, rows*columns)
 
 	// This cell location (row,col) is on the line
-	row := int((endpoints.ymax-y)*yscale + .5)
-	col := int((x-endpoints.xmin)*xscale + .5)
+	row := int((fs.ymax-y)*yscale + .5)
+	col := int((x-fs.xmin)*xscale + .5)
 	plot.Grid[row*columns+col] = "online"
 
 	prevX = x
 	prevY = y
 
 	// Scale factor to determine the number of interpolation points
-	lenEPy := endpoints.ymax - endpoints.ymin
-	lenEPx := endpoints.xmax - endpoints.xmin
+	lenEPy := fs.ymax - fs.ymin
+	lenEPx := fs.xmax - fs.xmin
 
 	// Continue with the rest of the points in the file
 	for input.Scan() {
@@ -241,8 +211,8 @@ func (fs *FilterSignal) gridFillInterp(plot *PlotT) error {
 		}
 
 		// This cell location (row,col) is on the line
-		row := int((endpoints.ymax-y)*yscale + .5)
-		col := int((x-endpoints.xmin)*xscale + .5)
+		row := int((fs.ymax-y)*yscale + .5)
+		col := int((x-fs.xmin)*xscale + .5)
 		plot.Grid[row*columns+col] = "online"
 
 		// Interpolate the points between previous point and current point
@@ -265,8 +235,8 @@ func (fs *FilterSignal) gridFillInterp(plot *PlotT) error {
 		interpX := prevX
 		interpY := prevY
 		for i := 0; i < ncells; i++ {
-			row := int((endpoints.ymax-interpY)*yscale + .5)
-			col := int((interpX-endpoints.xmin)*xscale + .5)
+			row := int((fs.ymax-interpY)*yscale + .5)
+			col := int((interpX-fs.xmin)*xscale + .5)
 			plot.Grid[row*columns+col] = "online"
 			interpX += stepX
 			interpY += stepY
@@ -297,6 +267,13 @@ func (fs *FilterSignal) filterBuf(index int, nsamples int, f *os.File) {
 		for k := 0; k <= n; k++ {
 			sum += fs.buf[index][k] * fs.filterCoeff[n-k]
 		}
+		// find min/max of the signal as we go
+		if sum < fs.ymin {
+			fs.ymin = sum
+		}
+		if sum > fs.ymax {
+			fs.ymax = sum
+		}
 		fmt.Fprintf(f, "%f\n", sum)
 	}
 
@@ -309,6 +286,13 @@ func (fs *FilterSignal) filterBuf(index int, nsamples int, f *os.File) {
 		sum := 0.0
 		for k := n - m + 1; k <= n; k++ {
 			sum += fs.buf[index][k] * fs.filterCoeff[n-k]
+		}
+		// find min/max of the signal as we go
+		if sum < fs.ymin {
+			fs.ymin = sum
+		}
+		if sum > fs.ymax {
+			fs.ymax = sum
 		}
 		fmt.Fprintf(f, "%f\n", sum)
 	}
@@ -331,6 +315,13 @@ func (fs *FilterSignal) filterBuf(index int, nsamples int, f *os.File) {
 // index is the buffer to use, 1 or 2, nsamples is the number of samples to filter
 func (fs *FilterSignal) nofilterBuf(index int, nsamples int, f *os.File) {
 	for n := 0; n < nsamples; n++ {
+		// find min/max of the signal as we go
+		if fs.buf[index][n] < fs.ymin {
+			fs.ymin = fs.buf[index][n]
+		}
+		if fs.buf[index][n] > fs.ymax {
+			fs.ymax = fs.buf[index][n]
+		}
 		fmt.Fprintf(f, "%f\n", fs.buf[index][n])
 	}
 }
@@ -397,16 +388,20 @@ func (fs *FilterSignal) generate(r *http.Request) error {
 			fs.done <- struct{}{}
 		}()
 
+		fst := fs.firstSampleTime
 		// loop to generate a block of signal samples
 		// signal the filter when done with each block of samples
 		// block on a semaphore until filter goroutine is available
+		// set the first sample time equal to the previous last sample time
 		for {
-			n := fs.fillBuf(0, noiseSD)
+			n := fs.fillBuf(0, noiseSD, fst)
+			fst = fs.lastSampleTime
 			fs.sema1 <- n
 			if n < block {
 				return
 			}
-			n = fs.fillBuf(1, noiseSD)
+			n = fs.fillBuf(1, noiseSD, fst)
+			fst = fs.lastSampleTime
 			fs.sema2 <- n
 			if n < block {
 				return
@@ -425,6 +420,7 @@ func (fs *FilterSignal) filter(r *http.Request, plot *PlotT) error {
 	// if no filter file specified, pass the samples unchanged
 	filename := r.FormValue("filter")
 	if len(filename) == 0 {
+		fs.filterfile = "none"
 		f2, _ := os.Create(path.Join(dataDir, signal))
 
 		// launch a goroutine to no-filter generator signal
@@ -453,6 +449,7 @@ func (fs *FilterSignal) filter(r *http.Request, plot *PlotT) error {
 			}
 		}()
 	} else {
+		fs.filterfile = filename
 		// get filter coefficients from file specified by user
 		f, err := os.Open(path.Join(dataDir, filename))
 		if err != nil {
@@ -530,14 +527,14 @@ func showSineTable(plot *PlotT) {
 }
 
 // label the plot and execute the PlotT on the HTML template
-func (fs *FilterSignal) labelExec(w http.ResponseWriter, plot *PlotT, endpoints *Endpoints) {
+func (fs *FilterSignal) labelExec(w http.ResponseWriter, plot *PlotT) {
 
 	plot.Xlabel = make([]string, xlabels)
 	plot.Ylabel = make([]string, ylabels)
 
 	// Construct x-axis labels
-	incr := (endpoints.xmax - endpoints.xmin) / (xlabels - 1)
-	x := endpoints.xmin
+	incr := (fs.xmax - fs.xmin) / (xlabels - 1)
+	x := fs.xmin
 	// First label is empty for alignment purposes
 	for i := range plot.Xlabel {
 		plot.Xlabel[i] = fmt.Sprintf("%.2f", x)
@@ -545,8 +542,8 @@ func (fs *FilterSignal) labelExec(w http.ResponseWriter, plot *PlotT, endpoints 
 	}
 
 	// Construct the y-axis labels
-	incr = (endpoints.ymax - endpoints.ymin) / (ylabels - 1)
-	y := endpoints.ymin
+	incr = (fs.ymax - fs.ymin) / (ylabels - 1)
+	y := fs.ymin
 	for i := range plot.Ylabel {
 		plot.Ylabel[i] = fmt.Sprintf("%.2f", y)
 		y += incr
@@ -568,13 +565,9 @@ func (fs *FilterSignal) labelExec(w http.ResponseWriter, plot *PlotT, endpoints 
 		i++
 	}
 
-	filename := "none"
-	if len(plot.Filename) > 0 {
-		filename = plot.Filename
-	}
 	if len(plot.Status) == 0 {
 		plot.Status = fmt.Sprintf("Signal consisting of %d sines was filtered with %s",
-			len(fs.sines), filename)
+			len(fs.sines), plot.Filename)
 	}
 
 	// Write to HTTP using template and grid
@@ -619,7 +612,6 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 		// Get FilterState from previous submit and store in FilterSignal
 		var filterState FilterState
 		// This file exists only after all the samples are generated and filtered
-		// Not present during block processing of the current submit
 		f, err := os.Open(path.Join(dataDir, stateFile))
 		if err == nil {
 			defer f.Close()
@@ -638,7 +630,7 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 				}
 				return
 			}
-			filterState.lastSampleTime = lst
+			filterState.firstSampleTime = lst
 			filterState.lastFiltered = make([]float64, 0)
 			// Get the last incomplete filtered outputs from previous submit
 			for input.Scan() {
@@ -657,7 +649,7 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 				filterState.lastFiltered = append(filterState.lastFiltered, fltOut)
 			}
 		} else {
-			filterState = FilterState{lastSampleTime: 0.0, lastFiltered: make([]float64, 0)}
+			filterState = FilterState{firstSampleTime: 0.0, lastFiltered: make([]float64, 0)}
 		}
 
 		// create FilterSignal instance fs
@@ -723,7 +715,7 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 		}
 
 		//  generate x-labels, ylabels, status in PlotT and execute the data on the HTML template
-		fs.labelExec(w, &plot, &fs.Endpoints)
+		fs.labelExec(w, &plot)
 
 	} else {
 		// delete previous state file if initial connection (not a submit)
@@ -736,7 +728,6 @@ func handleFilterSignal(w http.ResponseWriter, r *http.Request) {
 		if err := filterSignalTmpl.Execute(w, plot); err != nil {
 			log.Fatalf("Write to HTTP output using template with error: %v\n", err)
 		}
-
 	}
 }
 
