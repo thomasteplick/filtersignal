@@ -114,6 +114,13 @@
 				width: 50px;
 			}
 
+			#snrlabel {
+				margin-left: 20px;
+			}
+			#filterlabel {
+				margin-left: 75px;
+			}
+
 		</style>
 	</head>
 	<body>
@@ -151,9 +158,9 @@
 							<label for="samplefreq">Sample Frequency:</label>
 							<input type="number" name="samplefreq" value="{{.SampleFreq}}" id="samplefreq" required />
 							<br />
-							<label for="snr">SNR:</label>
+							<label for="snr" id="snrlabel">SNR:</label>
 							<input type="number" id="snr" name="snr" value="{{.SNR}}" required />
-							<label for="filter">Filter:</label>
+							<label for="filter" id="filterlabel">Filter:</label>
 							<input type="file" id="filter" name="filter" value="{{.Filename}}" />
 							<hr />
 							<h4>Sinusoids</h4>
