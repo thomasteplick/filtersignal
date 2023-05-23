@@ -21,11 +21,11 @@ Order 57 FIR filter Parks-McClellan algorithm using the Remez exchange for equip
 The stopband is greater than 60 dB below the passband.
 ![image](https://github.com/thomasteplick/filtersignal/assets/117768679/321c8041-0511-455e-bc86-6ba0601b9651)
 
-<h4>Impulse Response FIR lowpass filter, 58 coefficients using the Parks-McClellan algorithm
+<h4>Impulse Response FIR lowpass filter, 58 coefficients using the Parks-McClellan algorithm</h4>
   
 ![image](https://github.com/thomasteplick/filtersignal/assets/117768679/5a839f6f-e0f1-45a7-bcfc-261710f484cb)
   
-<h4>Frequency Response FIR lowpass filter, 58 coefficients using the Parks-McClellan algorithm
+<h4>Frequency Response FIR lowpass filter, 58 coefficients using the Parks-McClellan algorithm</h4>
 
 ![image](https://github.com/thomasteplick/filtersignal/assets/117768679/71ad7b4b-8fd0-4302-b1e5-ceecd9f847dd)
 
