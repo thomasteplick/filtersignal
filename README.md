@@ -19,7 +19,7 @@ where <b>h[n]</b> are the FIR filter coefficients.
 
 <h4>FIR lowpass filter, passband is 0 to 400 Hz, transition band is 400 Hz to 600 Hz, stopband is 600 Hz to 2000 Hz</h4>
 
-Order 57 FIR filter Parks-McClellan algorithm using the Remez exchange for equipple error in passband and stopband.
+Order 57 FIR filter using the Parks-McClellan algorithm and the Remez exchange for equripple error in passband and stopband.
 The stopband is greater than 60 dB below the passband.
 ![image](https://github.com/thomasteplick/filtersignal/assets/117768679/321c8041-0511-455e-bc86-6ba0601b9651)
 
