@@ -11,7 +11,7 @@ done using the convolution sum:
 
 ![image](https://github.com/thomasteplick/filtersignal/assets/117768679/dc066abd-bff4-4be0-a4c4-057d88a714d2)
 
-where <b>h[n]</b> are the FIR filter coefficients.
+where <b>h[n]</b> are the FIR filter coefficients that comprise the impulse response.
 
 <h4>Four sinusoids, signal-to-noise ratio (SNR) 20 dB, 8000 samples and sample rate = 4000 samples/sec.</h4>
 
